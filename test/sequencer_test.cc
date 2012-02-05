@@ -23,13 +23,9 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#define BOOST_TEST_DYN_LINK
-#define BOOST_TEST_MODULE SequencerTest
-
 #include <atomic>
 #include <iostream>
-
-#include <boost/test/unit_test.hpp>
+#include <gtest/gtest.h>
 
 #include <disruptor/sequencer.h>
 
@@ -38,7 +34,7 @@
 namespace disruptor {
 namespace test {
 
-struct SequencerFixture {
+struct SequencerFixture : public testing::Test {
     SequencerFixture() :
         sequencer(BUFFER_SIZE,
                   kSingleThreadedStrategy,
@@ -62,65 +58,63 @@ struct SequencerFixture {
     Sequence gating_sequence;
 };
 
-BOOST_AUTO_TEST_SUITE(SequencerBasic)
-
-BOOST_FIXTURE_TEST_CASE(ShouldStartWithValueInitialized, SequencerFixture) {
-    BOOST_CHECK(sequencer.GetCursor() == kInitialCursorValue);
+TEST_F(SequencerFixture, ShouldStartWithValueInitialized) {
+    EXPECT_TRUE(sequencer.GetCursor() == kInitialCursorValue);
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldGetPublishFirstSequence, SequencerFixture) {
+TEST_F(SequencerFixture, ShouldGetPublishFirstSequence) {
     const int64_t sequence = sequencer.Next();
-    BOOST_CHECK(sequencer.GetCursor() == kInitialCursorValue);
-    BOOST_CHECK(sequence == 0);
+    EXPECT_TRUE(sequencer.GetCursor() == kInitialCursorValue);
+    EXPECT_TRUE(sequence == 0);
 
     sequencer.Publish(sequence);
-    BOOST_CHECK(sequencer.GetCursor() == sequence);
+    EXPECT_TRUE(sequencer.GetCursor() == sequence);
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldIndicateAvailableCapacity, SequencerFixture) {
-    BOOST_CHECK(sequencer.HasAvalaibleCapacity());
+TEST_F(SequencerFixture, ShouldIndicateAvailableCapacity) {
+    EXPECT_TRUE(sequencer.HasAvalaibleCapacity());
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldIndicateNoAvailableCapacity, SequencerFixture) {
+TEST_F(SequencerFixture, ShouldIndicateNoAvailableCapacity) {
     FillBuffer();
-    BOOST_CHECK(sequencer.HasAvalaibleCapacity() == false);
+    EXPECT_TRUE(sequencer.HasAvalaibleCapacity() == false);
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldForceClaimSequence, SequencerFixture) {
+TEST_F(SequencerFixture, ShouldForceClaimSequence) {
     const int64_t claim_sequence = 3;
     const int64_t sequence = sequencer.Claim(claim_sequence);
 
-    BOOST_CHECK(sequencer.GetCursor() == kInitialCursorValue);
-    BOOST_CHECK(sequence == claim_sequence);
+    EXPECT_TRUE(sequencer.GetCursor() == kInitialCursorValue);
+    EXPECT_TRUE(sequence == claim_sequence);
 
     sequencer.ForcePublish(sequence);
-    BOOST_CHECK(sequencer.GetCursor() == claim_sequence);
+    EXPECT_TRUE(sequencer.GetCursor() == claim_sequence);
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldPublishSequenceBatch, SequencerFixture) {
+TEST_F(SequencerFixture, ShouldPublishSequenceBatch) {
     const int batch_size = 3;
     BatchDescriptor batch_descriptor(batch_size);
     sequencer.Next(&batch_descriptor);
 
-    BOOST_CHECK(sequencer.GetCursor() == kInitialCursorValue);
-    BOOST_CHECK(batch_descriptor.end() == kInitialCursorValue + batch_size);
-    BOOST_CHECK(batch_descriptor.size() == batch_size);
+    EXPECT_TRUE(sequencer.GetCursor() == kInitialCursorValue);
+    EXPECT_TRUE(batch_descriptor.end() == kInitialCursorValue + batch_size);
+    EXPECT_TRUE(batch_descriptor.size() == batch_size);
 
     sequencer.Publish(batch_descriptor);
-    BOOST_CHECK(sequencer.GetCursor() == kInitialCursorValue + batch_size);
+    EXPECT_TRUE(sequencer.GetCursor() == kInitialCursorValue + batch_size);
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldWaitOnSequence, SequencerFixture) {
+TEST_F(SequencerFixture, ShouldWaitOnSequence) {
     std::vector<Sequence*> dependents(0);
     ProcessingSequenceBarrier* barrier = sequencer.NewBarrier(dependents);
 
     const int64_t sequence = sequencer.Next();
     sequencer.Publish(sequence);
 
-    BOOST_CHECK(sequence == barrier->WaitFor(sequence));
+    EXPECT_TRUE(sequence == barrier->WaitFor(sequence));
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldWaitOnSequenceShowingBatchingEffect, SequencerFixture) {
+TEST_F(SequencerFixture, ShouldWaitOnSequenceShowingBatchingEffect) {
     std::vector<Sequence*> dependents(0);
     ProcessingSequenceBarrier* barrier = sequencer.NewBarrier(dependents);
 
@@ -130,10 +124,10 @@ BOOST_FIXTURE_TEST_CASE(ShouldWaitOnSequenceShowingBatchingEffect, SequencerFixt
     const int64_t sequence = sequencer.Next();
     sequencer.Publish(sequence);
 
-    BOOST_CHECK(sequence == barrier->WaitFor(kInitialCursorValue + 1LL));
+    EXPECT_TRUE(sequence == barrier->WaitFor(kInitialCursorValue + 1LL));
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldSignalWaitingProcessorWhenSequenceIsPublished, SequencerFixture) {
+TEST_F(SequencerFixture, ShouldSignalWaitingProcessorWhenSequenceIsPublished) {
     std::vector<Sequence*> dependents(0);
     ProcessingSequenceBarrier* barrier = sequencer.NewBarrier(dependents);
 
@@ -149,7 +143,7 @@ BOOST_FIXTURE_TEST_CASE(ShouldSignalWaitingProcessorWhenSequenceIsPublished, Seq
                std::atomic<bool>* completed) {
             // body
                 waiting->store(false);
-                BOOST_CHECK(kInitialCursorValue + 1LL == \
+                EXPECT_TRUE(kInitialCursorValue + 1LL == \
                     barrier->WaitFor(kInitialCursorValue + 1LL));
                 gating_sequence->set_sequence(kInitialCursorValue + 1LL);
                 completed->store(true);
@@ -160,24 +154,24 @@ BOOST_FIXTURE_TEST_CASE(ShouldSignalWaitingProcessorWhenSequenceIsPublished, Seq
             &completed);
 
     while (waiting.load()) {}
-    BOOST_CHECK(gating_sequence.sequence() == kInitialCursorValue);
+    EXPECT_TRUE(gating_sequence.sequence() == kInitialCursorValue);
 
     sequencer.Publish(sequencer.Next());
 
     while (!completed.load()) {}
-    BOOST_CHECK(gating_sequence.sequence() == kInitialCursorValue + 1LL);
+    EXPECT_TRUE(gating_sequence.sequence() == kInitialCursorValue + 1LL);
 
     thread.join();
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldHoldUpPublisherWhenRingIsFull, SequencerFixture) {
+TEST_F(SequencerFixture, ShouldHoldUpPublisherWhenRingIsFull) {
     std::atomic<bool> waiting(true);
     std::atomic<bool> completed(false);
 
     FillBuffer();
 
     const int64_t expected_full_cursor = kInitialCursorValue + BUFFER_SIZE;
-    BOOST_CHECK(sequencer.GetCursor() == expected_full_cursor);
+    EXPECT_TRUE(sequencer.GetCursor() == expected_full_cursor);
 
     std::thread thread(
             // lambda prototype
@@ -194,18 +188,17 @@ BOOST_FIXTURE_TEST_CASE(ShouldHoldUpPublisherWhenRingIsFull, SequencerFixture) {
             &completed);
 
     while (waiting.load()) {}
-    BOOST_CHECK(sequencer.GetCursor() == expected_full_cursor);
+    EXPECT_TRUE(sequencer.GetCursor() == expected_full_cursor);
 
     gating_sequence.set_sequence(kInitialCursorValue + 1LL);
 
     while (!completed.load()) {}
-    BOOST_CHECK(sequencer.GetCursor() == expected_full_cursor + 1LL);
+    EXPECT_TRUE(sequencer.GetCursor() == expected_full_cursor + 1LL);
 
     thread.join();
 
 }
 
-BOOST_AUTO_TEST_SUITE_END()
 
-}; // namepspace test
-}; // namepspace disruptor
+}; // namespace test
+}; // namespace disruptor

@@ -23,27 +23,24 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#define BOOST_TEST_DYN_LINK
-#define BOOST_TEST_MODULE RingBufferTest
-
 #include <exception>
 #include <future>
 #include <thread>
 #include <vector>
-
-#include <boost/test/unit_test.hpp>
 
 #include <disruptor/event_processor.h>
 #include <disruptor/ring_buffer.h>
 
 #include "support/stub_event.h"
 
+#include <gtest/gtest.h>
+
 #define BUFFER_SIZE 64
 
 namespace disruptor {
 namespace test {
 
-struct RingBufferFixture {
+struct RingBufferFixture : public testing::Test {
     RingBufferFixture() :
         factory(new StubEventFactory()),
         ring_buffer(factory.get(),
@@ -112,10 +109,8 @@ class TestEventProcessor : public EventProcessorInterface<StubEvent> {
     SequenceBarrierInterface* barrier_;
 };
 
-BOOST_AUTO_TEST_SUITE(RingBufferBasic)
-
-BOOST_FIXTURE_TEST_CASE(ShouldClaimAndGet, RingBufferFixture) {
-    BOOST_CHECK(ring_buffer.GetCursor() == disruptor::kInitialCursorValue);
+TEST_F(RingBufferFixture, ShouldClaimAndGet) {
+    EXPECT_EQ(ring_buffer.GetCursor(), disruptor::kInitialCursorValue);
     StubEvent expected_event(1234);
 
     int64_t claim_sequence = ring_buffer.Next();
@@ -124,16 +119,16 @@ BOOST_FIXTURE_TEST_CASE(ShouldClaimAndGet, RingBufferFixture) {
     ring_buffer.Publish(claim_sequence);
 
     int64_t sequence = barrier->WaitFor(0);
-    BOOST_CHECK(sequence == 0);
+    EXPECT_EQ(sequence, 0);
 
     StubEvent* event = ring_buffer.Get(sequence);
-    BOOST_CHECK(event->value() == expected_event.value());
+    EXPECT_EQ(event->value(), expected_event.value());
 
-    BOOST_CHECK(ring_buffer.GetCursor() == 0);
+    EXPECT_EQ(ring_buffer.GetCursor(), 0);
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldClaimAndGetWithTimeout, RingBufferFixture) {
-    BOOST_CHECK(ring_buffer.GetCursor() == disruptor::kInitialCursorValue);
+TEST_F(RingBufferFixture, ShouldClaimAndGetWithTimeout) {
+    EXPECT_EQ(ring_buffer.GetCursor(), disruptor::kInitialCursorValue);
     StubEvent expected_event(1234);
 
     int64_t claim_sequence = ring_buffer.Next();
@@ -142,20 +137,20 @@ BOOST_FIXTURE_TEST_CASE(ShouldClaimAndGetWithTimeout, RingBufferFixture) {
     ring_buffer.Publish(claim_sequence);
 
     int64_t sequence = barrier->WaitFor(0, 5000);
-    BOOST_CHECK(sequence == 0);
+    EXPECT_EQ(sequence, 0);
 
     StubEvent* event = ring_buffer.Get(sequence);
-    BOOST_CHECK(event->value() == expected_event.value());
+    EXPECT_EQ(event->value(), expected_event.value());
 
-    BOOST_CHECK(ring_buffer.GetCursor() == 0);
+    EXPECT_EQ(ring_buffer.GetCursor(), 0);
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldGetWithTimeout, RingBufferFixture) {
+TEST_F(RingBufferFixture, ShouldGetWithTimeout) {
     int64_t sequence = barrier->WaitFor(0, 5000);
-    BOOST_CHECK(sequence == kInitialCursorValue);
+    EXPECT_EQ(sequence, kInitialCursorValue);
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldClaimAndGetInSeperateThread, RingBufferFixture) {
+TEST_F(RingBufferFixture, ShouldClaimAndGetInSeperateThread) {
     std::future<std::vector<StubEvent>> future = \
         std::async(std::bind(&Waiter, &ring_buffer, barrier, 0LL, 0LL));
 
@@ -168,10 +163,10 @@ BOOST_FIXTURE_TEST_CASE(ShouldClaimAndGetInSeperateThread, RingBufferFixture) {
 
     std::vector<StubEvent> results = future.get();
 
-    BOOST_CHECK(results[0].value() == expected_event.value());
+    EXPECT_EQ(results[0].value(), expected_event.value());
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldWrap, RingBufferFixture) {
+TEST_F(RingBufferFixture, ShouldWrap) {
     int n_messages = BUFFER_SIZE;
     int offset = 1000;
 
@@ -184,14 +179,14 @@ BOOST_FIXTURE_TEST_CASE(ShouldWrap, RingBufferFixture) {
 
     int expected_sequence = n_messages + offset - 1;
     int64_t avalaible= barrier->WaitFor(expected_sequence);
-    BOOST_CHECK(avalaible == expected_sequence);
+    EXPECT_EQ(avalaible, expected_sequence);
 
     for (int i = offset; i < n_messages; i++) {
-        BOOST_CHECK(i == ring_buffer.Get(i)->value());
+        EXPECT_EQ(i, ring_buffer.Get(i)->value());
     }
 }
 
-BOOST_FIXTURE_TEST_CASE(ShouldGetAtSpecificSequence, RingBufferFixture) {
+TEST_F(RingBufferFixture, ShouldGetAtSpecificSequence) {
     int64_t expected_sequence = 5;
 
     ring_buffer.Claim(expected_sequence);
@@ -200,19 +195,19 @@ BOOST_FIXTURE_TEST_CASE(ShouldGetAtSpecificSequence, RingBufferFixture) {
     ring_buffer.ForcePublish(expected_sequence);
 
     int64_t sequence = barrier->WaitFor(expected_sequence);
-    BOOST_CHECK(expected_sequence == sequence);
+    EXPECT_EQ(expected_sequence, sequence);
 
     StubEvent* event = ring_buffer.Get(sequence);
-    BOOST_CHECK(expected_event->value() == event->value());
+    EXPECT_EQ(expected_event->value(), event->value());
 
-    BOOST_CHECK(expected_sequence == ring_buffer.GetCursor());
+    EXPECT_EQ(expected_sequence, ring_buffer.GetCursor());
 }
 
 // Publisher will try to publish BUFFER_SIZE + 1 events. The last event
 // should wait for at least one consume before publishing, thus preventing
 // an overwrite. After the single consume, the publisher should resume and 
 // publish the last event.
-BOOST_FIXTURE_TEST_CASE(ShouldPreventPublishersOvertakingEventProcessorWrapPoint, RingBufferFixture) {
+TEST_F(RingBufferFixture, ShouldPreventPublishersOvertakingEventProcessorWrapPoint) {
     std::atomic<bool> publisher_completed(false);
     std::atomic<int> counter(0);
     std::vector<Sequence*> dependency(0);
@@ -246,16 +241,14 @@ BOOST_FIXTURE_TEST_CASE(ShouldPreventPublishersOvertakingEventProcessorWrapPoint
     while (counter.load() < BUFFER_SIZE) {}
 
     int64_t sequence = ring_buffer.GetCursor();
-    BOOST_CHECK(sequence == (BUFFER_SIZE - 1));
-    BOOST_CHECK(publisher_completed.load() == false);
+    EXPECT_EQ(sequence, (BUFFER_SIZE - 1));
+    EXPECT_EQ(publisher_completed.load(), false);
 
     processor.Run();
     thread.join();
 
-    BOOST_CHECK(publisher_completed.load());
+    EXPECT_TRUE(publisher_completed.load());
 }
-
-BOOST_AUTO_TEST_SUITE_END()
 
 }; // namespace test
 }; // namespace disruptor
